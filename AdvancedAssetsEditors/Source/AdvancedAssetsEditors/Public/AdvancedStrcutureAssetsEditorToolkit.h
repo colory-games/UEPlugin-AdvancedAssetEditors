@@ -4,22 +4,20 @@
 
 #include "Toolkits/AssetEditorToolkit.h"
 
-#include "CustomStructAsset/CustomStructAssetBase.h"
 
-
-class FCustomStructAssetEditorToolkit : public FAssetEditorToolkit
+class FAdvancedStrcutureAssetsEditorToolkit : public FAssetEditorToolkit
 {
-    UCustomStructAssetBase* CustomStructAsset;
+    UScriptStruct* ScriptStruct;
     TSharedRef<ISlateStyle> Style;
 
     TSharedRef<SDockTab> HandleTabManagerSpawnTab(const FSpawnTabArgs& Args, FName TabIdentifier);
 
 public:
-    FCustomStructAssetEditorToolkit(const TSharedRef<ISlateStyle>& InStyle);
+    FAdvancedStrcutureAssetsEditorToolkit(const TSharedRef<ISlateStyle>& InStyle);
 
-    virtual ~FCustomStructAssetEditorToolkit();
+    virtual ~FAdvancedStrcutureAssetsEditorToolkit();
 
-    void Initialize(UCustomStructAssetBase* InCustomStructAsset,
+    void Initialize(UScriptStruct* InCustomStructAsset,
                     const EToolkitMode::Type InMode,
                     const TSharedPtr<IToolkitHost>& InToolkitHost);
 

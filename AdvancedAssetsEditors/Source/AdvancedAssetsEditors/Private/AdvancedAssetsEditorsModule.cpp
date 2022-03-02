@@ -1,7 +1,7 @@
 #include "Templates/SharedPointer.h"
 
 #include "AdvancedAssetsEditorsStyle.h"
-#include "AdvancedAssetsEditorsActions.h"
+#include "AdvancedStructureAssetsActions.h"
 
 #define LOCTEXT_NAMESPACE "FAdvancedAssetsEditorsModule"
 
@@ -20,7 +20,7 @@ public:
         // Register Actions
         IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
         TSharedRef<IAssetTypeActions> Actions = MakeShareable(
-            new FAdvancedAssetsEditorsActions(FAdvancedAssetsEditorsStyle::Get().ToSharedRef()));
+            new FAdvancedStructureAssetsActions(FAdvancedAssetsEditorsStyle::Get().ToSharedRef()));
         AssetTools.RegisterAssetTypeActions(Actions);
         RegisteredAssetTypeActions.Add(Actions);
     }
