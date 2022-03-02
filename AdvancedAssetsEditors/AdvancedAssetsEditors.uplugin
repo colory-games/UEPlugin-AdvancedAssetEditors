@@ -1,0 +1,23 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1",
+  "FriendlyName": "Advanced Assets Editors",
+  "Description": "A Collection of Assets Editor",
+  "Category": "Other",
+  "CreatedBy": "nutti (Colory Games)",
+  "CreatedByURL": "https://github.com/colory-games/Advanced-Assets-Editors",
+  "DocsURL": "",
+  "MarketplaceURL": "",
+  "SupportURL": "",
+  "CanContainContent": true,
+  "IsBetaVersion": false,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "AdvancedAssetsEditors",
+      "Type": "Editor",
+      "LoadingPhase": "PreLoadingScreen"
+    }
+  ]
+}
