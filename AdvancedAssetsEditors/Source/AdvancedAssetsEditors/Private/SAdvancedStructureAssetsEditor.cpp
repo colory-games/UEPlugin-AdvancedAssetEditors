@@ -1,11 +1,11 @@
 #include "SAdvancedStructureAssetsEditor.h"
 
 #include "Kismet2/StructureEditorUtils.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #include "DetailLayoutBuilder.h"
 #include "SPinTypeSelector.h"
 #include "PropertyCustomizationHelpers.h"
-
 
 #include "DetailCategoryBuilder.h"
 #include "IDetailGroup.h"
@@ -19,26 +19,30 @@ SAdvancedStructureAssetsEditor::~SAdvancedStructureAssetsEditor()
 }
 
 void SAdvancedStructureAssetsEditor::Construct(
-    const FArguments& InArgs, UScriptStruct* InCustomStructAsset,
+    const FArguments& InArgs, UUserDefinedStruct* InCustomStructAsset,
     const TSharedRef<ISlateStyle>& InStyle)
 {
     // Ref: FUserDefinedStructureLayout::GenerateChildContent (Source: /Engine/Source/Editor/Kismet/Private/UserDefinedStructureEditor.cpp)
 
-    ScriptStruct = InCustomStructAsset;
+    UserDefinedStruct = InCustomStructAsset;
 
     FPropertyEditorModule& EditModule = FModuleManager::Get().GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
     FOnGetDetailCustomizationInstance OnGetPropertiesViewCustomizationInstance = FOnGetDetailCustomizationInstance::CreateStatic(&FAdvancedStructurePropertiesDetailCustomization::MakeInstance);
-    FDetailsViewArgs OnGetPropertiesViewCustomizationInstanceArgs(false, false, false, FDetailsViewArgs::HideNameArea, true, nullptr, false, FName(TEXT("UScriptStruct")));
+    FDetailsViewArgs OnGetPropertiesViewCustomizationInstanceArgs(false, false, false, FDetailsViewArgs::HideNameArea, true, nullptr, false, FName(TEXT("UUserDefinedStruct")));
     PropertiesView = EditModule.CreateDetailView(OnGetPropertiesViewCustomizationInstanceArgs);
     PropertiesView->RegisterInstancedCustomPropertyLayout(UObject::StaticClass(), OnGetPropertiesViewCustomizationInstance);
-    PropertiesView->SetObject(ScriptStruct);
+    PropertiesView->SetObject(UserDefinedStruct);
 
-    FOnGetDetailCustomizationInstance OnGetDefaultsViewCustomizationInstance = FOnGetDetailCustomizationInstance::CreateStatic(&FAdvancedStructureDefaultsDetailCustomization::MakeInstance);
-    FDetailsViewArgs OnGetDefaultsViewCustomizationInstanceArgs(false, false, false, FDetailsViewArgs::HideNameArea, true, nullptr, false, FName(TEXT("UScriptStruct")));
+    StructData = MakeShareable(new FStructOnScope(UserDefinedStruct));
+    UserDefinedStruct->InitializeDefaultValue(StructData->GetStructMemory());
+    StructData->SetPackage(UserDefinedStruct->GetOutermost());
+
+    FOnGetDetailCustomizationInstance OnGetDefaultsViewCustomizationInstance = FOnGetDetailCustomizationInstance::CreateStatic(&FAdvancedStructureDefaultsDetailCustomization::MakeInstance, StructData, UserDefinedStruct);
+    FDetailsViewArgs OnGetDefaultsViewCustomizationInstanceArgs(false, false, false, FDetailsViewArgs::HideNameArea, true, nullptr, false, FName(TEXT("UUserDefinedStruct")));
     DefaultsView = EditModule.CreateDetailView(OnGetDefaultsViewCustomizationInstanceArgs);
     DefaultsView->RegisterInstancedCustomPropertyLayout(UObject::StaticClass(), OnGetDefaultsViewCustomizationInstance);
-    DefaultsView->SetObject(ScriptStruct);
+    DefaultsView->SetObject(UserDefinedStruct);
 
     ChildSlot
     [
@@ -187,6 +191,39 @@ FText FAdvancedStructurePropertiesDetailCustomization::GetEditableText(FProperty
     return FText::AsCultureInvariant(Name);
 }
 
+FEdGraphPinType FAdvancedStructurePropertiesDetailCustomization::OnGetPinInfo(TWeakObjectPtr<UObject> Object, FGuid Guid) const
+{
+    if (Object.IsValid())
+    {
+        auto UserDefinedStruct = Cast<UUserDefinedStruct>(Object);
+        if (UserDefinedStruct != nullptr)
+        {
+            FStructVariableDescription* Desc = FStructureEditorUtils::GetVarDesc(UserDefinedStruct).FindByPredicate(FStructureEditorUtils::FFindByGuidHelper<FStructVariableDescription>(Guid));
+            if (Desc != nullptr)
+            {
+                return Desc->ToPinType();
+            }
+        }
+    }
+    return FEdGraphPinType();
+}
+
+void FAdvancedStructurePropertiesDetailCustomization::OnPrePinInfoChanged(const FEdGraphPinType& PinType)
+{
+}
+
+void FAdvancedStructurePropertiesDetailCustomization::OnPinInfoChanged(const FEdGraphPinType& PinType, TWeakObjectPtr<UObject> Object, FGuid Guid)
+{
+    if (Object.IsValid())
+    {
+        auto UserDefinedStruct = Cast<UUserDefinedStruct>(Object);
+        if (UserDefinedStruct != nullptr)
+        {
+            FStructureEditorUtils::ChangeVariableType(UserDefinedStruct, Guid, PinType);
+        }
+    }
+}
+
 void FAdvancedStructurePropertiesDetailCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
     // ref: https://github.com/johnfredcee/UBrowse/blob/master/Source/UBrowse/Private/SUBrowser.cpp
@@ -206,11 +243,12 @@ void FAdvancedStructurePropertiesDetailCustomization::CustomizeDetails(IDetailLa
             continue;
         }
 
-        UScriptStruct* ScriptStruct = Cast<UScriptStruct>(Object);
-        for (TFieldIterator<FProperty> It(ScriptStruct); It; ++It)
+        UUserDefinedStruct* UserDefinedStruct = Cast<UUserDefinedStruct>(Object);
+        for (TFieldIterator<FProperty> It(UserDefinedStruct); It; ++It)
         {
             FProperty* Property = *It;
             uint64 Flags = Property->GetPropertyFlags();
+            FGuid Guid = FStructureEditorUtils::GetGuidForProperty(Property);
 
             IDetailGroup& PropertyGroup = StructureCategory.AddGroup(FName(Property->GetAuthoredName()), FText::AsCultureInvariant(Property->GetAuthoredName()));
             PropertyGroup.HeaderRow()
@@ -226,6 +264,9 @@ void FAdvancedStructurePropertiesDetailCustomization::CustomizeDetails(IDetailLa
                         + SHorizontalBox::Slot()
                         [
                             SNew(SPinTypeSelector, FGetPinTypeTree::CreateUObject(K2Schema, &UEdGraphSchema_K2::GetVariableTypeTree))
+                            .TargetPinType(this, &FAdvancedStructurePropertiesDetailCustomization::OnGetPinInfo, Object, Guid)
+                            .OnPinTypePreChanged(this, &FAdvancedStructurePropertiesDetailCustomization::OnPrePinInfoChanged)
+                            .OnPinTypeChanged(this, &FAdvancedStructurePropertiesDetailCustomization::OnPinInfoChanged, Object, Guid)
                             .Schema(K2Schema)
                             .TypeTreeFilter(ETypeTreeFilter::None)
                             .Font(IDetailLayoutBuilder::GetDetailFont())
@@ -301,6 +342,47 @@ void FAdvancedStructurePropertiesDetailCustomization::CustomizeDetails(IDetailLa
     }
 }
 
+void FAdvancedStructureDefaultsDetailCustomization::OnFinishedChangingProperties(const FPropertyChangedEvent& PropertyChangedEvent)
+{
+    // ref: /Engine/Source/Editor/Kismet/Private/UserDefinedStructureEditor.cpp
+
+    if (IsPropertyChangeComplete())
+    {
+        UStruct* OwnerStruct = PropertyChangedEvent.MemberProperty->GetOwnerStruct();
+
+        if (ensure(OwnerStruct == UserDefinedStruct))
+        {
+            const FProperty* DirectProperty = PropertyChangedEvent.MemberProperty;
+            while (DirectProperty && !DirectProperty->GetOwner<const UUserDefinedStruct>())
+            {
+                DirectProperty = DirectProperty->GetOwner<const FProperty>();
+            }
+            ensure(nullptr != DirectProperty);
+
+            if (DirectProperty)
+            {
+                FString DefaultValueString;
+                bool bDefaultValueSet = false;
+                if (StructData.IsValid() && StructData->IsValid())
+                {
+                    bDefaultValueSet = FBlueprintEditorUtils::PropertyValueToString(DirectProperty, StructData->GetStructMemory(), DefaultValueString, OwnerStruct);
+                }
+
+                const FGuid Guid = FStructureEditorUtils::GetGuidForProperty(DirectProperty);
+                if (bDefaultValueSet && Guid.IsValid())
+                {
+                    FStructureEditorUtils::ChangeVariableDefaultValue(UserDefinedStruct, Guid, DefaultValueString);
+                }
+            }
+        }
+    }
+}
+
+bool FAdvancedStructureDefaultsDetailCustomization::IsPropertyChangeComplete()
+{
+    return PropertyChangeRecursionGuard == 0;
+}
+
 void FAdvancedStructureDefaultsDetailCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
     const IDetailsView* View = DetailLayout.GetDetailsView();
@@ -318,30 +400,13 @@ void FAdvancedStructureDefaultsDetailCustomization::CustomizeDetails(IDetailLayo
             continue;
         }
 
-        UScriptStruct* ScriptStruct = Cast<UScriptStruct>(Object);
-        for (TFieldIterator<FProperty> It(ScriptStruct); It; ++It)
+        View->OnFinishedChangingProperties().AddSP(this, &FAdvancedStructureDefaultsDetailCustomization::OnFinishedChangingProperties);
+
+        for (TFieldIterator<FProperty> It(UserDefinedStruct); It; ++It)
         {
             FProperty* Property = *It;
 
-            IDetailGroup& PropertyGroup = StructureCategory.AddGroup(FName(Property->GetAuthoredName()), FText::AsCultureInvariant(Property->GetAuthoredName()));
-            PropertyGroup.HeaderRow()
-                .NameContent()
-                [
-                    SNew(STextBlock)
-                    .Text(FText::AsCultureInvariant(Property->GetAuthoredName()))
-                    .Font(IDetailLayoutBuilder::GetDetailFont())
-                ]
-                .ValueContent()
-                [
-                    SNew(SHorizontalBox)
-                    + SHorizontalBox::Slot()
-                    [
-                        SNew(SPinTypeSelector, FGetPinTypeTree::CreateUObject(K2Schema, &UEdGraphSchema_K2::GetVariableTypeTree))
-                        .Schema(K2Schema)
-                        .TypeTreeFilter(ETypeTreeFilter::None)
-                        .Font(IDetailLayoutBuilder::GetDetailFont())
-                    ]
-                ];
+            StructureCategory.AddExternalStructureProperty(StructData, (*It)->GetFName());
         }
     }
 }

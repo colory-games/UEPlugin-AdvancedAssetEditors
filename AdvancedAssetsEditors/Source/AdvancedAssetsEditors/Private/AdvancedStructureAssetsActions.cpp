@@ -21,7 +21,7 @@ void FAdvancedStructureAssetsActions::OpenAssetEditor(const TArray<UObject*>& In
 
     for (auto It = InObjects.CreateConstIterator(); It; ++It)
     {
-        auto ScriptStruct = Cast<UScriptStruct>(*It);
+        auto ScriptStruct = Cast<UUserDefinedStruct>(*It);
         if (ScriptStruct != nullptr)
         {
             TSharedRef<FAdvancedStrcutureAssetsEditorToolkit> EditorToolkit = MakeShareable(new FAdvancedStrcutureAssetsEditorToolkit(Style));

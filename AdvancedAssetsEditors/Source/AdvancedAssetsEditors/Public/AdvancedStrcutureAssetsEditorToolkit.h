@@ -7,7 +7,7 @@
 
 class FAdvancedStrcutureAssetsEditorToolkit : public FAssetEditorToolkit
 {
-    UScriptStruct* ScriptStruct;
+    UUserDefinedStruct* UserDefinedStruct;
     TSharedRef<ISlateStyle> Style;
 
     TSharedRef<SDockTab> HandleTabManagerSpawnTab(const FSpawnTabArgs& Args, FName TabIdentifier);
@@ -17,7 +17,7 @@ public:
 
     virtual ~FAdvancedStrcutureAssetsEditorToolkit();
 
-    void Initialize(UScriptStruct* InCustomStructAsset,
+    void Initialize(UUserDefinedStruct* InUserDefinedStruct,
                     const EToolkitMode::Type InMode,
                     const TSharedPtr<IToolkitHost>& InToolkitHost);
 

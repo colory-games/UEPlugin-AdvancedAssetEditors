@@ -14,7 +14,7 @@ TSharedRef<SDockTab> FAdvancedStrcutureAssetsEditorToolkit::HandleTabManagerSpaw
 
     if (TabIdentifier == TAB_ID)
     {
-        TabWidget = SNew(SAdvancedStructureAssetsEditor, ScriptStruct, Style);
+        TabWidget = SNew(SAdvancedStructureAssetsEditor, UserDefinedStruct, Style);
     }
 
     return SNew(SDockTab)
@@ -25,7 +25,7 @@ TSharedRef<SDockTab> FAdvancedStrcutureAssetsEditorToolkit::HandleTabManagerSpaw
 }
 
 FAdvancedStrcutureAssetsEditorToolkit::FAdvancedStrcutureAssetsEditorToolkit(const TSharedRef<ISlateStyle>& InStyle)
-    : ScriptStruct(nullptr), Style(InStyle)
+    : UserDefinedStruct(nullptr), Style(InStyle)
 {
 }
 
@@ -35,11 +35,11 @@ FAdvancedStrcutureAssetsEditorToolkit::~FAdvancedStrcutureAssetsEditorToolkit()
     FReimportManager::Instance()->OnPostReimport().RemoveAll(this);
 }
 
-void FAdvancedStrcutureAssetsEditorToolkit::Initialize(UScriptStruct* InCustomStructAsset,
+void FAdvancedStrcutureAssetsEditorToolkit::Initialize(UUserDefinedStruct* InCustomStructAsset,
                                                        const EToolkitMode::Type InMode,
                                                        const TSharedPtr<IToolkitHost>& InToolkitHost)
 {
-    ScriptStruct = InCustomStructAsset;
+    UserDefinedStruct = InCustomStructAsset;
 
     // TODO: Support Undo/Redo
 
@@ -77,7 +77,7 @@ void FAdvancedStrcutureAssetsEditorToolkit::Initialize(UScriptStruct* InCustomSt
         Layout,
         true,
         true,
-        ScriptStruct
+        UserDefinedStruct
     );
 
     RegenerateMenusAndToolbars();
