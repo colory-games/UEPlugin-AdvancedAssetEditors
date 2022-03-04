@@ -1,6 +1,5 @@
 #include "SAdvancedStructureAssetsEditor.h"
 
-#include "Kismet2/StructureEditorUtils.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #include "DetailLayoutBuilder.h"
@@ -34,15 +33,16 @@ void SAdvancedStructureAssetsEditor::Construct(
     PropertiesView->RegisterInstancedCustomPropertyLayout(UObject::StaticClass(), OnGetPropertiesViewCustomizationInstance);
     PropertiesView->SetObject(UserDefinedStruct);
 
-    StructData = MakeShareable(new FStructOnScope(UserDefinedStruct));
-    UserDefinedStruct->InitializeDefaultValue(StructData->GetStructMemory());
-    StructData->SetPackage(UserDefinedStruct->GetOutermost());
+    DefaultsNotification = MakeShareable(new FAdvancedStructureDefaultsNotification(UserDefinedStruct));
+    DefaultsNotification->Initialize();
 
-    FOnGetDetailCustomizationInstance OnGetDefaultsViewCustomizationInstance = FOnGetDetailCustomizationInstance::CreateStatic(&FAdvancedStructureDefaultsDetailCustomization::MakeInstance, StructData, UserDefinedStruct);
+    FOnGetDetailCustomizationInstance OnGetDefaultsViewCustomizationInstance = FOnGetDetailCustomizationInstance::CreateStatic(&FAdvancedStructureDefaultsDetailCustomization::MakeInstance,
+                                                                                                                               UserDefinedStruct, DefaultsNotification);
     FDetailsViewArgs OnGetDefaultsViewCustomizationInstanceArgs(false, false, false, FDetailsViewArgs::HideNameArea, true, nullptr, false, FName(TEXT("UUserDefinedStruct")));
     DefaultsView = EditModule.CreateDetailView(OnGetDefaultsViewCustomizationInstanceArgs);
     DefaultsView->RegisterInstancedCustomPropertyLayout(UObject::StaticClass(), OnGetDefaultsViewCustomizationInstance);
     DefaultsView->SetObject(UserDefinedStruct);
+    DefaultsNotification->SetView(DefaultsView);
 
     ChildSlot
     [
@@ -342,11 +342,80 @@ void FAdvancedStructurePropertiesDetailCustomization::CustomizeDetails(IDetailLa
     }
 }
 
+void FAdvancedStructureDefaultsNotification::Initialize()
+{
+    StructData = MakeShareable(new FStructOnScope(UserDefinedStruct));
+    UserDefinedStruct->InitializeDefaultValue(StructData->GetStructMemory());
+    StructData->SetPackage(UserDefinedStruct->GetOutermost());
+}
+
+UUserDefinedStruct* FAdvancedStructureDefaultsNotification::GetUserDefinedStruct()
+{
+    return UserDefinedStruct;
+}
+
+TSharedPtr<class SWidget> FAdvancedStructureDefaultsNotification::GetView()
+{
+    return DetailsView;
+}
+
+void FAdvancedStructureDefaultsNotification::SetView(TSharedPtr<IDetailsView> View)
+{
+    DetailsView = View;
+}
+
+void FAdvancedStructureDefaultsNotification::PreChange(const UUserDefinedStruct* InUserDefinedStruct, FStructureEditorUtils::EStructureEditorChangeInfo Info)
+{
+    if (Info != FStructureEditorUtils::DefaultValueChanged)
+    {
+        StructData->Destroy();
+        DetailsView->SetObject(nullptr);
+        DetailsView->OnFinishedChangingProperties().Clear();
+    }
+}
+
+void FAdvancedStructureDefaultsNotification::PostChange(const UUserDefinedStruct* InUserDefinedStruct, FStructureEditorUtils::EStructureEditorChangeInfo Info)
+{
+    if (Info != FStructureEditorUtils::DefaultValueChanged)
+    {
+        StructData->Initialize(UserDefinedStruct);
+        DetailsView->SetObject(UserDefinedStruct, true);
+    }
+    UserDefinedStruct->InitializeDefaultValue(StructData->GetStructMemory());
+}
+
+void FAdvancedStructureDefaultsNotification::NotifyPreChange(FProperty* PropertyAboutToChange)
+{
+    ++PropertyChangeRecursionGuard;
+}
+
+void FAdvancedStructureDefaultsNotification::NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent, FProperty* PropertyThatChanged)
+{
+    --PropertyChangeRecursionGuard;
+}
+
+bool FAdvancedStructureDefaultsNotification::IsPropertyChangeComplete()
+{
+    return PropertyChangeRecursionGuard == 0;
+}
+
+TSharedPtr<FStructOnScope> FAdvancedStructureDefaultsNotification::GetStructData() const
+{
+    return StructData;
+}
+
 void FAdvancedStructureDefaultsDetailCustomization::OnFinishedChangingProperties(const FPropertyChangedEvent& PropertyChangedEvent)
 {
     // ref: /Engine/Source/Editor/Kismet/Private/UserDefinedStructureEditor.cpp
 
-    if (IsPropertyChangeComplete())
+    if (!DefaultsNotification.IsValid())
+    {
+        return;
+    }
+
+    TSharedPtr<FStructOnScope> StructData = DefaultsNotification->GetStructData();
+
+    if (DefaultsNotification->IsPropertyChangeComplete())
     {
         UStruct* OwnerStruct = PropertyChangedEvent.MemberProperty->GetOwnerStruct();
 
@@ -378,10 +447,6 @@ void FAdvancedStructureDefaultsDetailCustomization::OnFinishedChangingProperties
     }
 }
 
-bool FAdvancedStructureDefaultsDetailCustomization::IsPropertyChangeComplete()
-{
-    return PropertyChangeRecursionGuard == 0;
-}
 
 void FAdvancedStructureDefaultsDetailCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
@@ -399,6 +464,8 @@ void FAdvancedStructureDefaultsDetailCustomization::CustomizeDetails(IDetailLayo
         if (!Object.IsValid()) {
             continue;
         }
+
+        TSharedPtr<FStructOnScope> StructData = DefaultsNotification->GetStructData();
 
         View->OnFinishedChangingProperties().AddSP(this, &FAdvancedStructureDefaultsDetailCustomization::OnFinishedChangingProperties);
 
