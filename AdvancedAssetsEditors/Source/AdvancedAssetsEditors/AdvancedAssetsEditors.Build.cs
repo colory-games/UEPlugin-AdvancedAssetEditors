@@ -28,13 +28,7 @@ public class AdvancedAssetsEditors : ModuleRules
                 "EditorStyle",
                 "BlueprintGraph",
                 "KismetWidgets",
-            }
-        );
-
-        PrivateIncludePathModuleNames.AddRange(
-            new string[]
-            {
-                //"AssetTools",
+                "PropertyEditor"
             }
         );
     }

@@ -165,179 +165,336 @@ FString GetEditableMenuString(const EEditableMenu EditableMenu)
     return EditableMenuStrings[EditableMenu];
 }
 
-void FAdvancedStructurePropertiesDetailCustomization::OnEditableChanged(TSharedPtr<uint8> Type, ESelectInfo::Type SelectionType, TWeakObjectPtr<UObject> Object, FProperty* Property)
+FText FAdvancedStructurePropertyLayout::OnGetNameText() const
 {
-    if (!Object.IsValid())
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
     {
-        return;
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        return FText::FromString(FStructureEditorUtils::GetVariableFriendlyName(UserDefinedStruct, Guid));
     }
-
-    SetEditableMenu(Property, (EEditableMenu)(*Type));
-    Object->MarkPackageDirty();
+    return FText::GetEmpty();
 }
 
-TSharedRef<SWidget> FAdvancedStructurePropertiesDetailCustomization::OnEditableWidgetGenerated(TSharedPtr<uint8> Type)
+void FAdvancedStructurePropertyLayout::OnNameTextCommitted(const FText& NewText, ETextCommit::Type InText)
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FStructureEditorUtils::RenameVariable(UserDefinedStruct, Guid, NewText.ToString());
+    }
+}
+
+FEdGraphPinType FAdvancedStructurePropertyLayout::OnGetPinInfo() const
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FStructVariableDescription* Desc = FStructureEditorUtils::GetVarDesc(UserDefinedStruct).FindByPredicate(FStructureEditorUtils::FFindByGuidHelper<FStructVariableDescription>(Guid));
+        if (Desc != nullptr)
+        {
+            return Desc->ToPinType();
+        }
+    }
+    return FEdGraphPinType();
+}
+
+void FAdvancedStructurePropertyLayout::OnPrePinInfoChanged(const FEdGraphPinType& PinType)
+{
+}
+
+void FAdvancedStructurePropertyLayout::OnPinInfoChanged(const FEdGraphPinType& PinType)
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FStructureEditorUtils::ChangeVariableType(UserDefinedStruct, Guid, PinType);
+    }
+}
+
+FReply FAdvancedStructurePropertyLayout::OnMoveUp()
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        if (!(PositionFlags & EPropertyPositionFlag::First))
+        {
+            auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+            FStructureEditorUtils::MoveVariable(UserDefinedStruct, Guid, FStructureEditorUtils::MD_Up);
+        }
+    }
+    return FReply::Handled();
+}
+
+FReply FAdvancedStructurePropertyLayout::OnMoveDown()
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        if (!(PositionFlags & EPropertyPositionFlag::Last))
+        {
+            auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+            FStructureEditorUtils::MoveVariable(UserDefinedStruct, Guid, FStructureEditorUtils::MD_Down);
+        }
+    }
+    return FReply::Handled();
+}
+
+void FAdvancedStructurePropertyLayout::OnRemoveProperty()
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FStructureEditorUtils::RemoveVariable(UserDefinedStruct, Guid);
+    }
+}
+
+bool FAdvancedStructurePropertyLayout::IsRemoveButtonEnabled()
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        return FStructureEditorUtils::GetVarDesc(UserDefinedStruct).Num() > 1;
+    }
+    return false;
+}
+
+void FAdvancedStructurePropertyLayout::OnEditableChanged(TSharedPtr<uint8> Type, ESelectInfo::Type SelectionType)
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FProperty* Property = FStructureEditorUtils::GetPropertyByGuid(UserDefinedStruct, Guid);
+        SetEditableMenu(Property, (EEditableMenu)(*Type));
+        UserDefinedStruct->MarkPackageDirty();
+    }
+}
+
+TSharedRef<SWidget> FAdvancedStructurePropertyLayout::OnEditableWidgetGenerated(TSharedPtr<uint8> Type)
 {
     FString Name = GetEditableMenuString((EEditableMenu)(*Type));
 
     return SNew(STextBlock).Text(FText::AsCultureInvariant(Name));
 }
 
-FText FAdvancedStructurePropertiesDetailCustomization::GetEditableText(FProperty* Property) const
+FText FAdvancedStructurePropertyLayout::GetEditableText() const
 {
-    EEditableMenu Menu = GetEditableMenu(Property);
-    FString Name = GetEditableMenuString(Menu);
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FProperty* Property = FStructureEditorUtils::GetPropertyByGuid(UserDefinedStruct, Guid);
+        EEditableMenu Menu = GetEditableMenu(Property);
+        FString Name = GetEditableMenuString(Menu);
 
-    return FText::AsCultureInvariant(Name);
+        return FText::AsCultureInvariant(Name);
+    }
+
+    return FText::GetEmpty();
 }
 
-FEdGraphPinType FAdvancedStructurePropertiesDetailCustomization::OnGetPinInfo(TWeakObjectPtr<UObject> Object, FGuid Guid) const
+void FAdvancedStructurePropertyLayout::OnChanged()
 {
-    if (Object.IsValid())
+    OnGenerateChildren.ExecuteIfBound();
+}
+
+void FAdvancedStructurePropertyLayout::GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder)
+{
+    ChildrenBuilder.AddCustomRow(LOCTEXT("Tooltip", "Tooltip"))
+    .NameContent()
+    [
+        SNew(STextBlock)
+        .Text(LOCTEXT("Tooltip", "Tooltip"))
+        .Font(IDetailLayoutBuilder::GetDetailFont())
+    ]
+/*    .ValueContent()
+    [
+        SNew(SEditableTextBox)
+        .Text(this, &FAdvancedStructurePropertyLayout::GetTooltipText)
+        .OnTextCommitted(this, &FAdvancedStructurePropertyLayout::OnTooltipTextCommitted)
+        .Font(IDetailLayoutBuilder::GetDetailFont())
+    ]*/;
+
+    RegisteredEnumItemsList.Empty();
+    TSharedPtr<EnumItems> Items = MakeShareable(new EnumItems());
+    for (int Index = 0; Index < EEditableMenu::EEditableMenu_MAX; ++Index)
     {
-        auto UserDefinedStruct = Cast<UUserDefinedStruct>(Object);
-        if (UserDefinedStruct != nullptr)
+        Items->Add(MakeShareable(new uint8(Index)));
+    };
+    RegisteredEnumItemsList.Add(Items);
+
+    EEditableMenu CurrentIndex = EEditableMenu::NoAccess;
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FProperty* Property = FStructureEditorUtils::GetPropertyByGuid(UserDefinedStruct, Guid);
+        CurrentIndex = GetEditableMenu(Property);
+    }
+
+    ChildrenBuilder.AddCustomRow(LOCTEXT("Tooltip", "Tooltip"))
+    .NameContent()
+    [
+        SNew(STextBlock)
+        .Text(FText::AsCultureInvariant("Editable"))
+        .Font(IDetailLayoutBuilder::GetDetailFont())
+    ]
+    .ValueContent()
+    [
+        SNew(SComboBox<TSharedPtr<uint8>>)
+        .OptionsSource(&(*Items))
+        .InitiallySelectedItem((*Items)[CurrentIndex])
+        .OnSelectionChanged(this, &FAdvancedStructurePropertyLayout::OnEditableChanged)
+        .OnGenerateWidget(this, &FAdvancedStructurePropertyLayout::OnEditableWidgetGenerated)
+        [
+            SNew(STextBlock)
+            .Text(this, &FAdvancedStructurePropertyLayout::GetEditableText)
+            .Font(IDetailLayoutBuilder::GetDetailFont())
+        ]
+    ];
+}
+
+void FAdvancedStructurePropertyLayout::GenerateHeaderRowContent(FDetailWidgetRow& NodeRow)
+{
+    auto K2Schema = GetDefault<UEdGraphSchema_K2>();
+
+    NodeRow
+    .NameContent()
+    [
+        SNew(SEditableTextBox)
+        .Text(this, &FAdvancedStructurePropertyLayout::OnGetNameText)
+        .OnTextCommitted(this, &FAdvancedStructurePropertyLayout::OnNameTextCommitted)
+        .Font(IDetailLayoutBuilder::GetDetailFont())
+    ]
+    .ValueContent()
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        [
+            SNew(SPinTypeSelector, FGetPinTypeTree::CreateUObject(K2Schema, &UEdGraphSchema_K2::GetVariableTypeTree))
+            .TargetPinType(this, &FAdvancedStructurePropertyLayout::OnGetPinInfo)
+            .OnPinTypePreChanged(this, &FAdvancedStructurePropertyLayout::OnPrePinInfoChanged)
+            .OnPinTypeChanged(this, &FAdvancedStructurePropertyLayout::OnPinInfoChanged)
+            .Schema(K2Schema)
+            .TypeTreeFilter(ETypeTreeFilter::None)
+            .Font(IDetailLayoutBuilder::GetDetailFont())
+        ]
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        [
+            SNew(SButton)
+            .OnClicked(this, &FAdvancedStructurePropertyLayout::OnMoveUp)
+            .IsEnabled(!(EPropertyPositionFlag::First & PositionFlags))
+            [
+                SNew(SImage)
+                .Image(FEditorStyle::GetBrush("BlueprintEditor.Details.ArgUpButton"))
+            ]
+        ]
+        + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SButton)
+                .OnClicked(this, &FAdvancedStructurePropertyLayout::OnMoveDown)
+                .IsEnabled(!(EPropertyPositionFlag::Last & PositionFlags))
+            [
+                SNew(SImage)
+                .Image(FEditorStyle::GetBrush("BlueprintEditor.Details.ArgDownButton"))
+            ]
+        ]
+        + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                PropertyCustomizationHelpers::MakeClearButton(
+                    FSimpleDelegate::CreateSP(this, &FAdvancedStructurePropertyLayout::OnRemoveProperty),
+                    LOCTEXT("RemoveVariable", "Remove member variable"),
+                    TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateSP(this, &FAdvancedStructurePropertyLayout::IsRemoveButtonEnabled))
+                )
+            ]
+        ];
+}
+
+FName FAdvancedStructurePropertyLayout::GetName() const
+{
+    return FName(*Guid.ToString());
+}
+
+void FAdvancedStructureStructureLayout::OnChanged()
+{
+    OnGenerateChildren.ExecuteIfBound();
+}
+
+void FAdvancedStructureStructureLayout::GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder)
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        auto VarDescs = FStructureEditorUtils::GetVarDesc(UserDefinedStruct);
+        int32 PropertySize = VarDescs.Num();
+        int32 PropertyIndex = -1;
+        // TODO: Use FStructureEditorUtils instead.
+        for (TFieldIterator<FProperty> It(UserDefinedStruct); It; ++It)
         {
-            FStructVariableDescription* Desc = FStructureEditorUtils::GetVarDesc(UserDefinedStruct).FindByPredicate(FStructureEditorUtils::FFindByGuidHelper<FStructVariableDescription>(Guid));
-            if (Desc != nullptr)
-            {
-                return Desc->ToPinType();
-            }
+            PropertyIndex++;
+            uint32 PositionFlags = 0;
+            PositionFlags |= (0 == PropertyIndex) ? EPropertyPositionFlag::First : 0;
+            PositionFlags |= ((PropertySize - 1) == PropertyIndex) ? EPropertyPositionFlag::Last : 0;
+
+            FProperty* Property = *It;
+            FGuid Guid = FStructureEditorUtils::GetGuidForProperty(Property);
+
+            TSharedRef<FAdvancedStructurePropertyLayout> PropLayout = MakeShareable(new FAdvancedStructurePropertyLayout(DetailCustomization, SharedThis(this), Guid, PositionFlags));
+
+            ChildrenBuilder.AddCustomBuilder(PropLayout);
         }
     }
-    return FEdGraphPinType();
 }
 
-void FAdvancedStructurePropertiesDetailCustomization::OnPrePinInfoChanged(const FEdGraphPinType& PinType)
+FName FAdvancedStructureStructureLayout::GetName() const
 {
-}
-
-void FAdvancedStructurePropertiesDetailCustomization::OnPinInfoChanged(const FEdGraphPinType& PinType, TWeakObjectPtr<UObject> Object, FGuid Guid)
-{
-    if (Object.IsValid())
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
     {
-        auto UserDefinedStruct = Cast<UUserDefinedStruct>(Object);
-        if (UserDefinedStruct != nullptr)
-        {
-            FStructureEditorUtils::ChangeVariableType(UserDefinedStruct, Guid, PinType);
-        }
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        return UserDefinedStruct->GetFName();
     }
+
+    return NAME_None;
 }
 
 void FAdvancedStructurePropertiesDetailCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
     // ref: https://github.com/johnfredcee/UBrowse/blob/master/Source/UBrowse/Private/SUBrowser.cpp
 
-    const IDetailsView* View = DetailLayout.GetDetailsView();
     IDetailCategoryBuilder& StructureCategory = DetailLayout.EditCategory("Structure", FText::GetEmpty(), ECategoryPriority::Important);
-
     const TArray<TWeakObjectPtr<UObject>> Objects = DetailLayout.GetDetailsView()->GetSelectedObjects();
+    check(Objects.Num() > 0);
 
-    auto K2Schema = GetDefault<UEdGraphSchema_K2>();
-
-    RegisteredEnumItemsList.Empty();
-
-    for (auto Object : Objects)
+    if (Objects.Num() == 1)
     {
-        if (!Object.IsValid()) {
-            continue;
-        }
+        UserDefinedStruct = CastChecked<UUserDefinedStruct>(Objects[0].Get());
+        StructureLayout = MakeShareable(new FAdvancedStructureStructureLayout(SharedThis(this)));
+        StructureCategory.AddCustomBuilder(StructureLayout.ToSharedRef());
+    }
+}
 
-        UUserDefinedStruct* UserDefinedStruct = Cast<UUserDefinedStruct>(Object);
-        for (TFieldIterator<FProperty> It(UserDefinedStruct); It; ++It)
+void FAdvancedStructurePropertiesDetailCustomization::PreChange(const UUserDefinedStruct* InUserDefinedStruct, FStructureEditorUtils::EStructureEditorChangeInfo Info)
+{
+}
+
+void FAdvancedStructurePropertiesDetailCustomization::PostChange(const UUserDefinedStruct* InUserDefinedStruct, FStructureEditorUtils::EStructureEditorChangeInfo Info)
+{
+    if (InUserDefinedStruct && (GetUserDefinedStruct() == InUserDefinedStruct))
+    {
+        if (StructureLayout.IsValid())
         {
-            FProperty* Property = *It;
-            uint64 Flags = Property->GetPropertyFlags();
-            FGuid Guid = FStructureEditorUtils::GetGuidForProperty(Property);
-
-            IDetailGroup& PropertyGroup = StructureCategory.AddGroup(FName(Property->GetAuthoredName()), FText::AsCultureInvariant(Property->GetAuthoredName()));
-            PropertyGroup.HeaderRow()
-                .NameContent()
-                [
-                    SNew(SEditableTextBox)
-                    .Text(FText::AsCultureInvariant(Property->GetAuthoredName()))
-                    .Font(IDetailLayoutBuilder::GetDetailFont())
-                ]
-                .ValueContent()
-                [
-                    SNew(SHorizontalBox)
-                        + SHorizontalBox::Slot()
-                        [
-                            SNew(SPinTypeSelector, FGetPinTypeTree::CreateUObject(K2Schema, &UEdGraphSchema_K2::GetVariableTypeTree))
-                            .TargetPinType(this, &FAdvancedStructurePropertiesDetailCustomization::OnGetPinInfo, Object, Guid)
-                            .OnPinTypePreChanged(this, &FAdvancedStructurePropertiesDetailCustomization::OnPrePinInfoChanged)
-                            .OnPinTypeChanged(this, &FAdvancedStructurePropertiesDetailCustomization::OnPinInfoChanged, Object, Guid)
-                            .Schema(K2Schema)
-                            .TypeTreeFilter(ETypeTreeFilter::None)
-                            .Font(IDetailLayoutBuilder::GetDetailFont())
-                        ]
-                        + SHorizontalBox::Slot()
-                        .AutoWidth()
-                        [
-                            SNew(SButton)
-                            [
-                                SNew(SImage)
-                                .Image(FEditorStyle::GetBrush("BlueprintEditor.Details.ArgUpButton"))
-                            ]
-                        ]
-                        + SHorizontalBox::Slot()
-                        .AutoWidth()
-                        [
-                            SNew(SButton)
-                            [
-                                SNew(SImage)
-                                .Image(FEditorStyle::GetBrush("BlueprintEditor.Details.ArgDownButton"))
-                            ]
-                        ]
-                        + SHorizontalBox::Slot()
-                        .AutoWidth()
-                ];
-
-            IDetailGroup& PropertyGeneralGroup = PropertyGroup.AddGroup(FName("General"), LOCTEXT("General", "General"));
-            PropertyGeneralGroup.HeaderRow()
-                .NameContent()
-                [
-                    SNew(STextBlock)
-                    .Text(FText::AsCultureInvariant("Tooltip"))
-                    .Font(IDetailLayoutBuilder::GetDetailFont())
-                ]
-                .ValueContent()
-                [
-                    SNew(SEditableTextBox)
-                    .Text(FText::AsCultureInvariant(Property->GetMetaData(TEXT("ToolTip")).Replace(TEXT("\n"), TEXT(" "))))
-                    .Font(IDetailLayoutBuilder::GetDetailFont())
-                ];
-
-            TSharedPtr<EnumItems> Items = MakeShareable(new EnumItems());
-            for (int Index = 0; Index < EEditableMenu::EEditableMenu_MAX; ++Index)
-            {
-                Items->Add(MakeShareable(new uint8(Index)));
-            };
-            RegisteredEnumItemsList.Add(Items);
-
-            EEditableMenu CurrentIndex = GetEditableMenu(Property);
-
-            PropertyGeneralGroup.HeaderRow()
-                .NameContent()
-                [
-                    SNew(STextBlock)
-                    .Text(FText::AsCultureInvariant("Editable"))
-                    .Font(IDetailLayoutBuilder::GetDetailFont())
-                ]
-                .ValueContent()
-                [
-                    SNew(SComboBox<TSharedPtr<uint8>>)
-                    .OptionsSource(&(*Items))
-                    .InitiallySelectedItem((*Items)[CurrentIndex])
-                    .OnSelectionChanged(this, &FAdvancedStructurePropertiesDetailCustomization::OnEditableChanged, Object, Property)
-                    .OnGenerateWidget(this, &FAdvancedStructurePropertiesDetailCustomization::OnEditableWidgetGenerated)
-                    [
-                        SNew(STextBlock)
-                        .Text(this, &FAdvancedStructurePropertiesDetailCustomization::GetEditableText, Property)
-                        .Font(IDetailLayoutBuilder::GetDetailFont())
-                    ]
-                ];
-
+            StructureLayout->OnChanged();
         }
     }
 }
@@ -446,7 +603,6 @@ void FAdvancedStructureDefaultsDetailCustomization::OnFinishedChangingProperties
         }
     }
 }
-
 
 void FAdvancedStructureDefaultsDetailCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
