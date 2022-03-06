@@ -80,6 +80,9 @@ class FAdvancedStructurePropertyLayout : public IDetailCustomNodeBuilder, public
     uint32 PositionFlags;
     EnumItemsList RegisteredEnumItemsList;
 
+    FText GetTooltipText() const;
+    void OnTooltipTextCommitted(const FText& NewText, ETextCommit::Type InTextCommit);
+
     FText OnGetNameText() const;
     void OnNameTextCommitted(const FText& NewText, ETextCommit::Type InText);
 
@@ -96,6 +99,8 @@ class FAdvancedStructurePropertyLayout : public IDetailCustomNodeBuilder, public
     void OnEditableChanged(TSharedPtr<uint8> Type, ESelectInfo::Type SelectionType);
     TSharedRef<SWidget> OnEditableWidgetGenerated(TSharedPtr<uint8> Type);
     FText GetEditableText() const;
+
+    EVisibility GetErrorIconVisibility();
 
 public:
     FAdvancedStructurePropertyLayout(
@@ -124,6 +129,13 @@ class FAdvancedStructureStructureLayout : public IDetailCustomNodeBuilder, publi
     TWeakPtr<FAdvancedStructurePropertiesDetailCustomization> DetailCustomization;
     FSimpleDelegate OnGenerateChildren;
     FEdGraphPinType InitialPinType;
+
+    const FSlateBrush* GetStatusImage() const;
+    FText GetStatusTooltipText() const;
+
+    FReply AddNewProperty();
+    FText GetTooltipText() const;
+    void OnTooltipTextCommited(const FText& NewText, ETextCommit::Type InTextCommit);
 
 public:
     FAdvancedStructureStructureLayout(TWeakPtr<FAdvancedStructurePropertiesDetailCustomization> InDetailCutomization) :

@@ -165,6 +165,29 @@ FString GetEditableMenuString(const EEditableMenu EditableMenu)
     return EditableMenuStrings[EditableMenu];
 }
 
+FText FAdvancedStructurePropertyLayout::GetTooltipText() const
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        auto Desc = FStructureEditorUtils::GetVarDesc(UserDefinedStruct);
+        auto PropertyDesc = Desc.FindByPredicate(FStructureEditorUtils::FFindByGuidHelper<FStructVariableDescription>(Guid));
+        return FText::FromString(PropertyDesc->ToolTip);
+    }
+    return FText();
+}
+
+void FAdvancedStructurePropertyLayout::OnTooltipTextCommitted(const FText& NewText, ETextCommit::Type InTextCommit)
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FStructureEditorUtils::ChangeVariableTooltip(UserDefinedStruct, Guid, NewText.ToString());
+    }
+}
+
 FText FAdvancedStructurePropertyLayout::OnGetNameText() const
 {
     auto DetailCustomizationSP = DetailCustomization.Pin();
@@ -264,15 +287,59 @@ bool FAdvancedStructurePropertyLayout::IsRemoveButtonEnabled()
     return false;
 }
 
+
+#include "KismetCompilerModule.h"
+#include "Kismet2/CompilerResultsLog.h"
+
+
+
 void FAdvancedStructurePropertyLayout::OnEditableChanged(TSharedPtr<uint8> Type, ESelectInfo::Type SelectionType)
 {
     auto DetailCustomizationSP = DetailCustomization.Pin();
     if (DetailCustomizationSP.IsValid())
     {
+        const FScopedTransaction Transaction(LOCTEXT("ChangeVariableOnBPInstance", "Change variable editable on BP instance"));
+
         auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+
+        FStructureEditorUtils::ModifyStructData(UserDefinedStruct);
+
+
         FProperty* Property = FStructureEditorUtils::GetPropertyByGuid(UserDefinedStruct, Guid);
         SetEditableMenu(Property, (EEditableMenu)(*Type));
-        UserDefinedStruct->MarkPackageDirty();
+
+        return;
+
+        for (TFieldIterator<FProperty> It(UserDefinedStruct); It; ++It)
+        {
+            FProperty* P = *It;
+            EEditableMenu Editable = GetEditableMenu(P);
+            FString S = GetEditableMenuString(Editable);
+            UE_LOG(LogTemp, Error, TEXT("on editable changed = %s"), *S);
+        }
+
+        // UserDefinedStructureCompilerUtils::CreateVariables => forcely configure CPF_ flags with using FStructureEditorUtils::GetVarDesc
+
+  
+        //UserDefinedStruct->EditorData.
+        //FStructureEditorUtils::ChangeEditableOnBPInstance()
+
+        {
+            TGuardValue<FStructureEditorUtils::EStructureEditorChangeInfo> ActiveChangeGuard(FStructureEditorUtils::FStructEditorManager::ActiveChange, FStructureEditorUtils::EStructureEditorChangeInfo::Unknown);
+            UserDefinedStruct->Status = EUserDefinedStructureStatus::UDSS_Dirty;
+            IKismetCompilerInterface& Compiler = FModuleManager::LoadModuleChecked<IKismetCompilerInterface>("KismetCompiler");
+            FCompilerResultsLog Results;
+            Compiler.CompileStructure(UserDefinedStruct, Results);
+            UserDefinedStruct->MarkPackageDirty();
+        }
+
+        for (TFieldIterator<FProperty> It(UserDefinedStruct); It; ++It)
+        {
+            FProperty* P = *It;
+            EEditableMenu Editable = GetEditableMenu(P);
+            FString S = GetEditableMenuString(Editable);
+            UE_LOG(LogTemp, Error, TEXT("on editable changed after = %s"), *S);
+        }
     }
 }
 
@@ -304,6 +371,22 @@ void FAdvancedStructurePropertyLayout::OnChanged()
     OnGenerateChildren.ExecuteIfBound();
 }
 
+EVisibility FAdvancedStructurePropertyLayout::GetErrorIconVisibility()
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        auto Desc = FStructureEditorUtils::GetVarDesc(UserDefinedStruct).FindByPredicate(FStructureEditorUtils::FFindByGuidHelper<FStructVariableDescription>(Guid));
+        if (Desc && Desc->bInvalidMember)
+        {
+            return EVisibility::Visible;
+        }
+    }
+
+    return EVisibility::Collapsed;
+}
+
 void FAdvancedStructurePropertyLayout::GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder)
 {
     ChildrenBuilder.AddCustomRow(LOCTEXT("Tooltip", "Tooltip"))
@@ -313,13 +396,13 @@ void FAdvancedStructurePropertyLayout::GenerateChildContent(IDetailChildrenBuild
         .Text(LOCTEXT("Tooltip", "Tooltip"))
         .Font(IDetailLayoutBuilder::GetDetailFont())
     ]
-/*    .ValueContent()
+    .ValueContent()
     [
         SNew(SEditableTextBox)
         .Text(this, &FAdvancedStructurePropertyLayout::GetTooltipText)
         .OnTextCommitted(this, &FAdvancedStructurePropertyLayout::OnTooltipTextCommitted)
         .Font(IDetailLayoutBuilder::GetDetailFont())
-    ]*/;
+    ];
 
     RegisteredEnumItemsList.Empty();
     TSharedPtr<EnumItems> Items = MakeShareable(new EnumItems());
@@ -363,19 +446,40 @@ void FAdvancedStructurePropertyLayout::GenerateChildContent(IDetailChildrenBuild
 void FAdvancedStructurePropertyLayout::GenerateHeaderRowContent(FDetailWidgetRow& NodeRow)
 {
     auto K2Schema = GetDefault<UEdGraphSchema_K2>();
+    const float PinInfoUIWidth = 240.0f;
+
+    TSharedPtr<SImage> ErrorIcon;
 
     NodeRow
     .NameContent()
     [
-        SNew(SEditableTextBox)
-        .Text(this, &FAdvancedStructurePropertyLayout::OnGetNameText)
-        .OnTextCommitted(this, &FAdvancedStructurePropertyLayout::OnNameTextCommitted)
-        .Font(IDetailLayoutBuilder::GetDetailFont())
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .HAlign(HAlign_Left)
+        .VAlign(VAlign_Center)
+        [
+            SAssignNew(ErrorIcon, SImage)
+            .Image(FEditorStyle::GetBrush("Icons.Error"))
+        ]
+        + SHorizontalBox::Slot()
+        .FillWidth(1)
+        .VAlign(VAlign_Center)
+        [
+            SNew(SEditableTextBox)
+            .Text(this, &FAdvancedStructurePropertyLayout::OnGetNameText)
+            .OnTextCommitted(this, &FAdvancedStructurePropertyLayout::OnNameTextCommitted)
+            .Font(IDetailLayoutBuilder::GetDetailFont())
+        ]
     ]
     .ValueContent()
+    .MaxDesiredWidth(PinInfoUIWidth)
+    .MinDesiredWidth(PinInfoUIWidth)
     [
         SNew(SHorizontalBox)
         + SHorizontalBox::Slot()
+        .VAlign(VAlign_Center)
+        .Padding(0.0f, 0.0f, 4.0f, 0.0f)
         [
             SNew(SPinTypeSelector, FGetPinTypeTree::CreateUObject(K2Schema, &UEdGraphSchema_K2::GetVariableTypeTree))
             .TargetPinType(this, &FAdvancedStructurePropertyLayout::OnGetPinInfo)
@@ -387,6 +491,8 @@ void FAdvancedStructurePropertyLayout::GenerateHeaderRowContent(FDetailWidgetRow
         ]
         + SHorizontalBox::Slot()
         .AutoWidth()
+        .HAlign(HAlign_Right)
+        .VAlign(VAlign_Center)
         [
             SNew(SButton)
             .OnClicked(this, &FAdvancedStructurePropertyLayout::OnMoveUp)
@@ -397,31 +503,105 @@ void FAdvancedStructurePropertyLayout::GenerateHeaderRowContent(FDetailWidgetRow
             ]
         ]
         + SHorizontalBox::Slot()
-            .AutoWidth()
-            [
-                SNew(SButton)
-                .OnClicked(this, &FAdvancedStructurePropertyLayout::OnMoveDown)
-                .IsEnabled(!(EPropertyPositionFlag::Last & PositionFlags))
+        .AutoWidth()
+        .HAlign(HAlign_Right)
+        .VAlign(VAlign_Center)
+        [
+            SNew(SButton)
+            .OnClicked(this, &FAdvancedStructurePropertyLayout::OnMoveDown)
+            .IsEnabled(!(EPropertyPositionFlag::Last & PositionFlags))
             [
                 SNew(SImage)
                 .Image(FEditorStyle::GetBrush("BlueprintEditor.Details.ArgDownButton"))
             ]
         ]
         + SHorizontalBox::Slot()
-            .AutoWidth()
-            [
-                PropertyCustomizationHelpers::MakeClearButton(
-                    FSimpleDelegate::CreateSP(this, &FAdvancedStructurePropertyLayout::OnRemoveProperty),
-                    LOCTEXT("RemoveVariable", "Remove member variable"),
-                    TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateSP(this, &FAdvancedStructurePropertyLayout::IsRemoveButtonEnabled))
-                )
-            ]
-        ];
+        .AutoWidth()
+        .HAlign(HAlign_Right)
+        .VAlign(VAlign_Center)
+        [
+            PropertyCustomizationHelpers::MakeClearButton(
+                FSimpleDelegate::CreateSP(this, &FAdvancedStructurePropertyLayout::OnRemoveProperty),
+                LOCTEXT("RemoveVariable", "Remove member variable"),
+                TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateSP(this, &FAdvancedStructurePropertyLayout::IsRemoveButtonEnabled))
+            )
+        ]
+    ];
+
+    if (ErrorIcon.IsValid())
+    {
+        ErrorIcon->SetVisibility(TAttribute<EVisibility>::Create(TAttribute<EVisibility>::FGetter::CreateSP(this, &FAdvancedStructurePropertyLayout::GetErrorIconVisibility)));
+    }
 }
 
 FName FAdvancedStructurePropertyLayout::GetName() const
 {
     return FName(*Guid.ToString());
+}
+
+const FSlateBrush* FAdvancedStructureStructureLayout::GetStatusImage() const
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        switch (UserDefinedStruct->Status.GetValue())
+        {
+        case EUserDefinedStructureStatus::UDSS_Error:
+            return FEditorStyle::GetBrush("Kismet.Status.Error.Small");
+        case EUserDefinedStructureStatus::UDSS_UpToDate:
+            return FEditorStyle::GetBrush("Kismet.Status.Good.Small");
+        default:
+            return FEditorStyle::GetBrush("Kismet.Status.Unknown.Small");
+        }
+    }
+    return nullptr;
+}
+
+FText FAdvancedStructureStructureLayout::GetStatusTooltipText() const
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        if (UserDefinedStruct->Status.GetValue() == EUserDefinedStructureStatus::UDSS_Error)
+        {
+            return FText::FromString(UserDefinedStruct->ErrorMessage);
+        }
+    }
+    return FText::GetEmpty();
+}
+
+FReply FAdvancedStructureStructureLayout::AddNewProperty()
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FStructureEditorUtils::AddVariable(UserDefinedStruct, InitialPinType);
+    }
+    return FReply::Handled();
+}
+
+FText FAdvancedStructureStructureLayout::GetTooltipText() const
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        return FText::FromString(FStructureEditorUtils::GetTooltip(UserDefinedStruct));
+    }
+    return FText();
+}
+
+void FAdvancedStructureStructureLayout::OnTooltipTextCommited(const FText& NewText, ETextCommit::Type InTextCommit)
+{
+    auto DetailCustomizationSP = DetailCustomization.Pin();
+    if (DetailCustomizationSP.IsValid())
+    {
+        auto UserDefinedStruct = DetailCustomizationSP->GetUserDefinedStruct();
+        FStructureEditorUtils::ChangeTooltip(UserDefinedStruct, NewText.ToString());
+    }
 }
 
 void FAdvancedStructureStructureLayout::OnChanged()
@@ -431,6 +611,62 @@ void FAdvancedStructureStructureLayout::OnChanged()
 
 void FAdvancedStructureStructureLayout::GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder)
 {
+    const float NameWidth = 80.0f;
+    const float ContentWidth = 130.0f;
+
+    ChildrenBuilder.AddCustomRow(FText::GetEmpty())
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .MaxWidth(NameWidth)
+        .HAlign(HAlign_Left)
+        .VAlign(VAlign_Center)
+        [
+            SNew(SImage)
+            .Image(this, &FAdvancedStructureStructureLayout::GetStatusImage)
+            .ToolTipText(this, &FAdvancedStructureStructureLayout::GetStatusTooltipText)
+        ]
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .HAlign(HAlign_Left)
+        [
+            SNew(SBox)
+            .WidthOverride(ContentWidth)
+            [
+                SNew(SButton)
+                .HAlign(HAlign_Center)
+                .Text(LOCTEXT("NewStructureProperty", "New Variable"))
+                .OnClicked(this, &FAdvancedStructureStructureLayout::AddNewProperty)
+            ]
+        ]
+    ];
+
+    ChildrenBuilder.AddCustomRow(FText::GetEmpty())
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .MaxWidth(NameWidth)
+        .HAlign(HAlign_Left)
+        [
+            SNew(STextBlock)
+            .Text(LOCTEXT("Tooltip", "Tooltip"))
+            .Font(IDetailLayoutBuilder::GetDetailFont())
+        ]
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .HAlign(HAlign_Left)
+        [
+            SNew(SBox)
+            .WidthOverride(ContentWidth)
+            [
+                SNew(SEditableTextBox)
+                .Text(this, &FAdvancedStructureStructureLayout::GetTooltipText)
+                .OnTextCommitted(this, &FAdvancedStructureStructureLayout::OnTooltipTextCommited)
+                .Font(IDetailLayoutBuilder::GetDetailFont())
+            ]
+        ]
+    ];
+
     auto DetailCustomizationSP = DetailCustomization.Pin();
     if (DetailCustomizationSP.IsValid())
     {
@@ -523,6 +759,15 @@ void FAdvancedStructureDefaultsNotification::SetView(TSharedPtr<IDetailsView> Vi
 
 void FAdvancedStructureDefaultsNotification::PreChange(const UUserDefinedStruct* InUserDefinedStruct, FStructureEditorUtils::EStructureEditorChangeInfo Info)
 {
+    for (TFieldIterator<FProperty> It(InUserDefinedStruct); It; ++It)
+    {
+        FProperty* Property = *It;
+
+        EEditableMenu Editable = GetEditableMenu(Property);
+        FString S = GetEditableMenuString(Editable);
+        UE_LOG(LogTemp, Error, TEXT("pre change = %s"), *S);
+    }
+
     if (Info != FStructureEditorUtils::DefaultValueChanged)
     {
         StructData->Destroy();
@@ -533,6 +778,15 @@ void FAdvancedStructureDefaultsNotification::PreChange(const UUserDefinedStruct*
 
 void FAdvancedStructureDefaultsNotification::PostChange(const UUserDefinedStruct* InUserDefinedStruct, FStructureEditorUtils::EStructureEditorChangeInfo Info)
 {
+    for (TFieldIterator<FProperty> It(InUserDefinedStruct); It; ++It)
+    {
+        FProperty* Property = *It;
+
+        EEditableMenu Editable = GetEditableMenu(Property);
+        FString S = GetEditableMenuString(Editable);
+        UE_LOG(LogTemp, Error, TEXT("post change = %s"), *S);
+    }
+
     if (Info != FStructureEditorUtils::DefaultValueChanged)
     {
         StructData->Initialize(UserDefinedStruct);
@@ -628,8 +882,32 @@ void FAdvancedStructureDefaultsDetailCustomization::CustomizeDetails(IDetailLayo
         for (TFieldIterator<FProperty> It(UserDefinedStruct); It; ++It)
         {
             FProperty* Property = *It;
+            
+            EEditableMenu Editable = GetEditableMenu(Property);
 
-            StructureCategory.AddExternalStructureProperty(StructData, (*It)->GetFName());
+            IDetailPropertyRow* Row = StructureCategory.AddExternalStructureProperty(StructData, (*It)->GetFName());
+            if (Row)
+            {
+                switch (Editable)
+                {
+                case EEditableMenu::EditAnywhere:
+                case EEditableMenu::EditDefaultsOnly:
+                    Row->Visibility(EVisibility::Visible);
+                    Row->IsEnabled(true);
+                    break;
+                case EEditableMenu::EditInstanceOnly:
+                case EEditableMenu::VisibleAnywhere:
+                case EEditableMenu::VisibleDefaultsOnly:
+                    Row->Visibility(EVisibility::Visible);
+                    Row->IsEnabled(false);
+                    break;
+                case EEditableMenu::VisibleInstanceOnly:
+                case EEditableMenu::NoAccess:
+                    Row->Visibility(EVisibility::Hidden);
+                    Row->IsEnabled(false);
+                    break;
+                }
+            }
         }
     }
 }
