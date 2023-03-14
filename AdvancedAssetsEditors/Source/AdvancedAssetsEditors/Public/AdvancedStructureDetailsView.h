@@ -3,28 +3,9 @@
 #pragma once
 
 #include "IDetailCustomization.h"
+#include "Engine/UserDefinedStruct.h"
 
 #include "AdvancedStructureNotification.h"
-
-
-class SAdvancedStructureAssetsEditor : public SCompoundWidget
-{
-    UUserDefinedStruct* UserDefinedStruct;
-
-    TSharedPtr<IDetailsView> PropertiesView;
-    TSharedPtr<IDetailsView> DefaultsView;
-    TSharedPtr<FAdvancedStructureDefaultsNotification> DefaultsNotification;
-
-public:
-    SLATE_BEGIN_ARGS(SAdvancedStructureAssetsEditor) { }
-    SLATE_END_ARGS()
-
-    virtual ~SAdvancedStructureAssetsEditor();
-
-    void Construct(const FArguments& InArgs, UUserDefinedStruct* InUserDefinedStruct);
-};
-
-class FAdvancedStructurePropertiesDetailCustomization;
 
 
 class FAdvancedStructureDefaultsDetailCustomization : public IDetailCustomization

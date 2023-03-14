@@ -9,9 +9,13 @@
 class FAdvancedStructureAssetsActions : public FAssetTypeActions_Base
 {
 public:
-    FAdvancedStructureAssetsActions(const TSharedRef<ISlateStyle>& InStyle);
+    FAdvancedStructureAssetsActions();
 
     virtual void OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<IToolkitHost> EditWithinLevelEditor = TSharedPtr<IToolkitHost>()) override;
+
+    bool HasActions(const TArray<UObject*>& InObjects) const;
+
+    void GetActions(const TArray<UObject*>& InObjects, FMenuBuilder& MenuBuilder);
 
     virtual uint32 GetCategories() override;
 
@@ -20,6 +24,4 @@ public:
     virtual UClass* GetSupportedClass() const override;
 
     virtual FColor GetTypeColor() const override;
-
-    TSharedRef<ISlateStyle> Style;
 };

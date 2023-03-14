@@ -1,26 +1,18 @@
 #include "Templates/SharedPointer.h"
 
-#include "AdvancedAssetsEditorsStyle.h"
 #include "AdvancedStructureAssetsActions.h"
-
-#define LOCTEXT_NAMESPACE "FAdvancedAssetsEditorsModule"
 
 
 class FAdvancedAssetsEditorsModule : public IModuleInterface
 {
-    TSharedPtr<ISlateStyle> Style;
     TArray<TSharedRef<IAssetTypeActions>> RegisteredAssetTypeActions;
 
 public:
     virtual void StartupModule() override
     {
-        FAdvancedAssetsEditorsStyle::Initialize();
-        FAdvancedAssetsEditorsStyle::ReloadTextures();
-
         // Register Actions
         IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-        TSharedRef<IAssetTypeActions> Actions = MakeShareable(
-            new FAdvancedStructureAssetsActions(FAdvancedAssetsEditorsStyle::Get().ToSharedRef()));
+        TSharedRef<IAssetTypeActions> Actions = MakeShareable(new FAdvancedStructureAssetsActions());
         AssetTools.RegisterAssetTypeActions(Actions);
         RegisteredAssetTypeActions.Add(Actions);
     }
@@ -38,8 +30,6 @@ public:
             }
         }
         RegisteredAssetTypeActions.Empty();
-
-        FAdvancedAssetsEditorsStyle::Shutdown();
     }
 
     virtual bool SupportsDynamicReloading() override
@@ -47,8 +37,6 @@ public:
         return true;
     }
 };
-
-#undef LOCTEXT_NAMESPACE
 
 
 IMPLEMENT_MODULE(FAdvancedAssetsEditorsModule, AdvancedAssetsEditors);

@@ -5,13 +5,14 @@
 #include "DetailLayoutBuilder.h"
 #include "DetailCategoryBuilder.h"
 #include "Engine/UserDefinedStruct.h"
+#include "BlueprintEditorModule.h"
 
-#include "../Public/AdvancedStrcutureAssetsEditorToolkit.h"
+#include "AdvancedStructureAssetSubsystem.h"
 
-#define LOCTEXT_NAMESPACE "FAdvancedAssetsEditorsModule"
+#define LOCTEXT_NAMESPACE "AdvancedStructureAsset"
 
 
-FAdvancedStructureAssetsActions::FAdvancedStructureAssetsActions(const TSharedRef<ISlateStyle>& InStyle) : Style(InStyle)
+FAdvancedStructureAssetsActions::FAdvancedStructureAssetsActions()
 {
 }
 
@@ -24,20 +25,60 @@ void FAdvancedStructureAssetsActions::OpenAssetEditor(const TArray<UObject*>& In
         auto ScriptStruct = Cast<UUserDefinedStruct>(*It);
         if (ScriptStruct != nullptr)
         {
-            TSharedRef<FAdvancedStrcutureAssetsEditorToolkit> EditorToolkit = MakeShareable(new FAdvancedStrcutureAssetsEditorToolkit(Style));
-            EditorToolkit->Initialize(ScriptStruct, Mode, EditWithinLevelEditor);
+            FBlueprintEditorModule* BlueprintEditorModule = FModuleManager::GetModulePtr<FBlueprintEditorModule>("Kismet");
+            auto EditorToolkit = BlueprintEditorModule->CreateUserDefinedStructEditor(Mode, EditWithinLevelEditor, ScriptStruct);
         }
     }
 }
 
+bool FAdvancedStructureAssetsActions::HasActions(const TArray<UObject*>& InObjects) const
+{
+    return true;
+}
+
+
+void FAdvancedStructureAssetsActions::GetActions(const TArray<UObject*>& InObjects, FMenuBuilder& MenuBuilder)
+{
+    FAssetTypeActions_Base::GetActions(InObjects, MenuBuilder);
+
+    if (InObjects.Num() != 1)
+    {
+        return;
+    }
+
+    auto UserDefinedStruct = Cast<UUserDefinedStruct>(InObjects[0]);
+    if (UserDefinedStruct == nullptr)
+    {
+        return;
+    }
+
+    MenuBuilder.AddMenuEntry(
+        LOCTEXT("EditAdvanceConfiguration", "Edit Advance Configuration"),
+        LOCTEXT("EditAdvanceConfigurationTip", "Edit the advance configuration of the structure asset."),
+        FSlateIcon(),
+        FUIAction(
+            FExecuteAction::CreateLambda([=]
+            {
+                TArray<UObject*> Objects = {InObjects[0]};
+                UAdvancedStructureAssetSubsystem* Subsystem = GEditor->GetEditorSubsystem<UAdvancedStructureAssetSubsystem>();
+                Subsystem->OpenAdvancedEditor(Objects);
+            }),
+            FCanExecuteAction::CreateLambda([=]
+            {
+                return true;
+            })
+        )
+    );
+}
+
 uint32 FAdvancedStructureAssetsActions::GetCategories()
 {
-    return EAssetTypeCategories::Misc;
+    return EAssetTypeCategories::Blueprint;
 }
 
 FText FAdvancedStructureAssetsActions::GetName() const
 {
-    return NSLOCTEXT("AssetTypeActions", "AssetTypeActions_AdvancedStructure", "Advanced Structure");
+    return LOCTEXT("Structure", "Structure");
 }
 
 UClass* FAdvancedStructureAssetsActions::GetSupportedClass() const
@@ -47,7 +88,7 @@ UClass* FAdvancedStructureAssetsActions::GetSupportedClass() const
 
 FColor FAdvancedStructureAssetsActions::GetTypeColor() const
 {
-    return FColor::White;
+    return FColor::Cyan;
 }
 
 #undef LOCTEXT_NAMESPACE

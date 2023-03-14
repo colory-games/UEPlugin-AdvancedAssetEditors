@@ -22,10 +22,13 @@ public class AdvancedAssetsEditors : ModuleRules
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {
+                "Kismet",
                 "Projects",
                 "Slate",
                 "SlateCore",
+                "ToolWidgets",
                 "EditorStyle",
+                "EditorSubsystem",
                 "BlueprintGraph",
                 "KismetWidgets",
                 "PropertyEditor"

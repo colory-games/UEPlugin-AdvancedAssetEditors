@@ -2,24 +2,32 @@
 
 #pragma once
 
-#include "Toolkits/AssetEditorToolkit.h"
+#include "Tools/BaseAssetToolkit.h"
+#include "Engine/UserDefinedStruct.h"
 
 
-class FAdvancedStrcutureAssetsEditorToolkit : public FAssetEditorToolkit
+class FAdvancedStrcutureAssetsEditorToolkit : public FBaseAssetToolkit
 {
-    UUserDefinedStruct* UserDefinedStruct;
-    TSharedRef<ISlateStyle> Style;
-
     TSharedRef<SDockTab> HandleTabManagerSpawnTab(const FSpawnTabArgs& Args, FName TabIdentifier);
 
+    FReply OnAddNewField();
+    const FSlateBrush* OnGetStructureStatus() const;
+    FText OnGetStatusTooltip() const;
+    void FillToolbar(FToolBarBuilder& ToolbarBuilder);
+
+    UUserDefinedStruct* UserDefinedStruct;
+
 public:
-    FAdvancedStrcutureAssetsEditorToolkit(const TSharedRef<ISlateStyle>& InStyle);
+    FAdvancedStrcutureAssetsEditorToolkit(UAssetEditor* InOwningAssetEditor);
+
+    void Initialize(UUserDefinedStruct* InUserDefinedStruct);
+
+    virtual bool IsPrimaryEditor() const override
+    {
+        return false;
+    }
 
     virtual ~FAdvancedStrcutureAssetsEditorToolkit();
-
-    void Initialize(UUserDefinedStruct* InUserDefinedStruct,
-                    const EToolkitMode::Type InMode,
-                    const TSharedPtr<IToolkitHost>& InToolkitHost);
 
     virtual FName GetToolkitFName() const override;
 
